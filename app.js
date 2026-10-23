@@ -121,10 +121,11 @@ function showLogin() {
 }
 $("#login-form").addEventListener("submit", async e => {
   e.preventDefault();
-  const email = $("#login-email").value.trim().toLowerCase(), msg = $("#login-msg");
-  msg.textContent = "A enviar…";
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
-  msg.textContent = error ? "Não foi possível enviar: " + error.message : "Link enviado. Abre o email neste aparelho.";
+  const email = $("#login-email").value.trim().toLowerCase(), password = $("#login-pass").value, msg = $("#login-msg");
+  msg.textContent = "A entrar…";
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { msg.textContent = /invalid/i.test(error.message) ? "Email ou password errados." : "Não foi possível entrar: " + error.message; return; }
+  start(data.session);
 });
 async function start(session) {
   if (S.me) return;

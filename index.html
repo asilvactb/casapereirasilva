@@ -32,12 +32,15 @@
       <span class="ln grey"><span>Silva.</span></span>
     </h1>
     <form id="login-form" class="login-form">
-      <label class="mono small" for="login-email">Entrar com o teu email</label>
+      <label class="mono small" for="login-email">Entrar</label>
       <div class="login-row">
-        <input id="login-email" type="email" required autocomplete="email" placeholder="nome@gmail.com">
-        <button class="pill accent" type="submit"><span data-t="Enviar link">Enviar link</span></button>
+        <input id="login-email" type="email" required autocomplete="username" placeholder="Email">
       </div>
-      <p class="mono small muted" id="login-msg">Recebes um link no email. Sem passwords.</p>
+      <div class="login-row">
+        <input id="login-pass" type="password" required autocomplete="current-password" placeholder="Password">
+        <button class="pill accent" type="submit"><span data-t="Entrar">Entrar</span></button>
+      </div>
+      <p class="mono small muted" id="login-msg">Só para a Casa Pereira Silva.</p>
     </form>
   </div>
 </section>

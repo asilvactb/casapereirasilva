@@ -3,8 +3,8 @@
   "short_name": "Casa",
   "start_url": "./#hoje",
   "display": "standalone",
-  "background_color": "#F4F4F1",
-  "theme_color": "#0D0D0C",
+  "background_color": "#F4F1EA",
+  "theme_color": "#F4F1EA",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
     { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },

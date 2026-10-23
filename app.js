@@ -61,7 +61,7 @@ async function run(p, okMsg) { const { error } = await p; if (error) { toast("N�
 /* ================= state ================= */
 const S = {
   me: null, who: null, view: "hoje",
-  settings: {}, fixed: [], paid: [], tx: [], budget: [], savings: [], tasks: [], goals: [], shopping: [], freq: [], milestones: {}, sources: [], events: [],
+  settings: {}, accounts: [], fixed: [], paid: [], tx: [], budget: [], savings: [], tasks: [], goals: [], shopping: [], freq: [], milestones: {}, sources: [], events: [],
   cycle: null, calMonth: null, calSel: null, tkFilter: "todas", dashOpen: new Set(), quick: [],
 };
 const cycleDay = () => Number(S.settings.cycle_day ?? 20);
@@ -83,9 +83,28 @@ function totals(k) {
   return { fixInc, fixExp, oneInc, varExp, inc: fixInc + oneInc, exp: fixExp + varExp, bal: fixInc + oneInc - fixExp - varExp, tx };
 }
 
+/* Cash now = account balances confirmed at `balances_as_of`, plus everything that moved since:
+   one-off movements logged after it, fixed bills ticked as paid after it, and salaries whose pay day has passed.
+   Forecast = cash now + salaries still to come this cycle − fixed bills still unpaid this cycle (day-to-day spending excluded). */
+function cash() {
+  const asOf = new Date(S.settings.balances_as_of || 0), now = new Date(), k = cycleKey(TODAY()), end = cycleRange(k).end;
+  const base = S.accounts.reduce((a, x) => a + +x.balance, 0);
+  let moved = 0;
+  S.tx.forEach(x => { if (new Date(x.created_at) > asOf) moved += x.type === "receita" ? +x.amount : -x.amount; });
+  S.paid.forEach(p => { if (p.paid_at && new Date(p.paid_at) > asOf) { const f = S.fixed.find(f => f.id === p.item_id); if (f && f.kind === "expense") moved -= +f.amount; } });
+  const pays = [];
+  for (const ck of [shiftCycle(k, -1), k]) activeFixed(ck, "income").forEach(f => f.pay_day && pays.push({ f, d: cycleDue(ck, f.pay_day) }));
+  pays.forEach(({ f, d }) => { if (d > asOf && d <= now) moved += +f.amount; });
+  const nowCash = base + moved;
+  const incoming = pays.filter(({ d }) => d > now && d <= end).reduce((a, { f }) => a + +f.amount, 0);
+  const unpaid = activeFixed(k, "expense").filter(f => !isPaid(k, f.id)).reduce((a, f) => a + +f.amount, 0);
+  const saved = S.savings.reduce((a, x) => a + +x.saved, 0);
+  return { base, moved, now: nowCash, incoming, unpaid, forecast: nowCash + incoming - unpaid, end, asOf, saved };
+}
+
 /* ================= data ================= */
 const TABLES = {
-  settings: ["settings", "*"], fixed: ["fixed_items", "*"], paid: ["fixed_paid", "*"], tx: ["transactions", "*"],
+  settings: ["settings", "*"], accounts: ["accounts", "*"], fixed: ["fixed_items", "*"], paid: ["fixed_paid", "*"], tx: ["transactions", "*"],
   budget: ["budget", "*"], savings: ["savings", "*"], tasks: ["tasks", "*"], goals: ["goals", "*"], shopping: ["shopping", "*"],
   freq: ["shopping_freq", "*"], milestones: ["milestones", "*"], sources: ["calendar_sources", "id,who,label,last_sync,last_error"], events: ["events", "*"],
 };
@@ -109,13 +128,28 @@ function watch() {
 }
 
 /* ================= auth ================= */
+/* Session backup: some browsers (iOS in-app browsers, home-screen apps, strict privacy modes)
+   drop localStorage between visits. Keep the rotating refresh token in a long-lived cookie too. */
+const RT = "cps_rt";
+const saveRT = s => { document.cookie = s ? `${RT}=${encodeURIComponent(s.refresh_token)}; Max-Age=31536000; Path=/; SameSite=Lax; Secure` : `${RT}=; Max-Age=0; Path=/`; try { if (s) localStorage.setItem("cps_email", s.user.email); } catch {} };
+const readRT = () => decodeURIComponent((document.cookie.match(/(?:^|; )cps_rt=([^;]*)/) || [])[1] || "");
 async function boot() {
-  const { data: { session } } = await sb.auth.getSession();
-  sb.auth.onAuthStateChange((ev, s) => { if (ev === "SIGNED_IN" && !S.me) start(s); if (ev === "SIGNED_OUT") location.reload(); });
-  if (session) start(session); else showLogin();
+  try { navigator.storage?.persist?.(); } catch {}
+  let { data: { session } } = await sb.auth.getSession();
+  if (!session && readRT()) {
+    const { data, error } = await sb.auth.refreshSession({ refresh_token: readRT() });
+    if (!error) session = data.session; else saveRT(null);
+  }
+  sb.auth.onAuthStateChange((ev, s) => {
+    if (s) saveRT(s);
+    if (ev === "SIGNED_IN" && !S.me) start(s);
+    if (ev === "SIGNED_OUT") { saveRT(null); location.reload(); }
+  });
+  if (session) { saveRT(session); start(session); } else showLogin();
 }
 function showLogin() {
   $("#login").hidden = false;
+  try { const e = localStorage.getItem("cps_email"); if (e) { $("#login-email").value = e; } } catch {}
   requestAnimationFrame(() => document.body.classList.add("ready"));
   startField(); tickClock();
 }
@@ -252,7 +286,7 @@ function preg() {
 
 /* ================= HOJE ================= */
 function renderHoje() {
-  const t = TODAY(), p = preg(), k = cycleKey(t), T = totals(k);
+  const t = TODAY(), p = preg(), k = cycleKey(t), T = totals(k), C = cash();
   $("#today-meta").textContent = `${F.long.format(t)} · Braga · ciclo de ${F.mon.format(parseYmd(k + "-01"))}`;
   const part = new Date().getHours() < 13 ? "Bom dia" : new Date().getHours() < 20 ? "Boa tarde" : "Boa noite";
   const title = $("#today-title"); title.replaceChildren(h("span", null, `${part},`), h("br"), h("span", { class: "grey" }, `${S.me}.`));
@@ -268,16 +302,16 @@ function renderHoje() {
   const openShop = S.shopping.filter(i => !i.done).length, openTasks = S.tasks.filter(x => !x.done).length;
   const st = $("#today-statement"); st.replaceChildren();
   const parts = [
-    ["Faltam", false], [`${Math.ceil(p.left / 7)} semanas`, true], ["para o bebé. Este ciclo sobram", false], [eur0.format(T.bal), true],
+    ["Faltam", false], [`${Math.ceil(p.left / 7)} semanas`, true], ["para o bebé. Hoje têm", false], [eur0.format(C.now) + " disponíveis", true],
     [bills.length ? "e há" : "e não há contas a vencer esta semana.", false], ...(bills.length ? [[`${bills.length} ${bills.length === 1 ? "conta" : "contas"}`, true], ["a vencer esta semana.", false]] : []),
   ];
   for (const [txt, acc] of parts) for (const wd of txt.split(" ")) st.append(h("span", { class: "w" + (acc ? " acc" : "") }, wd), " ");
   scrubWords();
   $("#kpis").replaceChildren(
-    kpi("Saldo do ciclo", T.bal, eur0.format, T.bal < 0 ? "neg" : ""),
+    kpi("Disponível agora", C.now, eur0.format, C.now < 0 ? "neg" : ""),
+    kpi("Fim do ciclo · " + F.short.format(C.end), C.forecast, eur0.format, C.forecast < 0 ? "neg" : ""),
     kpi("A pagar em 7 dias", billTot),
-    kpi("Compras na lista", openShop, n => Math.round(n)),
-    kpi("Tarefas abertas", openTasks, n => Math.round(n)));
+    kpi("Compras na lista", openShop, n => Math.round(n)));
   const evBox = $("#today-events"); evBox.replaceChildren();
   let any = 0;
   for (let i = 0; i < 7; i++) { const day = addDays(t, i); for (const e of eventsOn(day)) { if (any++ < 9) evBox.append(evRow(e, true)); } }
@@ -400,6 +434,7 @@ function renderFin() {
   $("#cy-range").textContent = `${F.short.format(r.start)} – ${F.short.format(r.end)}${isCur ? " · atual" : ""}`;
   $("#fin-kpis").replaceChildren(kpi("Entra", T.inc), kpi("Fixas", T.fixExp), kpi("Dia a dia", T.varExp), kpi("Sobra", T.bal, eur0.format, T.bal < 0 ? "neg" : ""));
   renderDash(k, T);
+  renderCash();
   // fixed
   const box = $("#fixed"); box.replaceChildren();
   const upd = (f, col) => v => run(sb.from("fixed_items").update({ [col]: v }).eq("id", f.id));
@@ -453,6 +488,23 @@ function renderFin() {
       h("div", { class: "meter" }, h("i", { style: `width:${p}%;background:var(--accent)` })),
       h("div", { class: "add" }, inp, h("button", { class: "pill sm", type: "button", onclick: async () => { const v = parseFloat(inp.value.replace(",", ".")); if (!v) return; await run(sb.from("savings").update({ saved: Math.max(0, +s.saved + v) }).eq("id", s.id), "Poupança atualizada"); } }, h("span", { "data-t": "Somar" }, "Somar"))))); });
 }
+function renderCash() {
+  const C = cash(), box = $("#cash"); box.replaceChildren();
+  const since = C.asOf.getTime() ? new Intl.DateTimeFormat("pt-PT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(C.asOf) : "—";
+  const big = (label, v, sub, cls = "") => { const b = h("b", { class: "num " + (v < 0 ? "neg " : "") + cls }, eur0.format(0)); countUp(b, v, eur0.format); return h("div", null, h("span", { class: "mono small muted" }, label), b, sub ? h("span", { class: "small muted" }, sub) : null); };
+  box.append(
+    h("div", { class: "block-head" }, h("h3", null, "Agora"), h("span", { class: "mono small muted" }, "saldos confirmados a " + since)),
+    h("div", { class: "cash-top" },
+      big("Disponível agora", C.now, C.moved ? `${eur.format(C.base)} nas contas ${C.moved > 0 ? "+" : "−"} ${eur.format(Math.abs(C.moved))} desde então` : "soma das contas"),
+      big("Fim do ciclo · " + F.short.format(C.end), C.forecast, `+${eur0.format(C.incoming)} a receber · −${eur0.format(C.unpaid)} fixas por pagar · sem dia a dia`),
+      big("Poupanças", C.saved, "fora das contas do dia a dia")));
+  const list = h("div", { class: "accts" });
+  [...S.accounts].sort((a, b) => a.sort - b.sort).forEach(a => list.append(h("div", { class: "row" }, h("span", { class: "sw " + (a.who || "familia") }),
+    h("span", { class: "t" }, ed(a.name, a.name, v => run(sb.from("accounts").update({ name: v }).eq("id", a.id)))),
+    ed(eur.format(+a.balance), +a.balance, async v => { if (v == null) return; await run(sb.from("accounts").update({ balance: v, updated_at: new Date().toISOString() }).eq("id", a.id)); await run(sb.from("settings").upsert({ key: "balances_as_of", value: new Date().toISOString() }), "Saldo atualizado"); }, { type: "number", cls: "amt" }),
+    h("span"))));
+  box.append(list, h("p", { class: "small muted" }, "Toca num saldo para o atualizar. O valor disponível acompanha sozinho os movimentos, contas pagas e ordenados que entram; de vez em quando confirmem os saldos reais."));
+}
 function catSel(cur, onSave, income) {
   const opts = income ? INC_CATS : [...new Set([...FIXED_CATS, ...S.budget.map(b => b.cat)])];
   const s = h("select", { class: "chip", style: "border:0;cursor:pointer", "aria-label": "Categoria" }, h("option", { value: "" }, "sem categoria"), opts.map(o => h("option", null, o)));
@@ -473,7 +525,7 @@ function renderDash(k, T) {
       h("span", { class: "nm" }, h("span", { class: "chev" }, "›"), r.c, h("span", { class: "mono small muted" }, r.items.length)),
       h("span", { class: "track", style: `width:${r.t / max * 100}%` }, r.fix ? h("i", { class: "s-fix", style: `flex:${r.fix}` }) : null, r.v ? h("i", { class: "s-var", style: `flex:${r.v}` }) : null),
       h("span", { class: "v" }, eur.format(r.t), h("small", null, Math.round(r.t / total * 100) + "%"))));
-    if (open) box.append(h("div", { class: "citems" }, r.items.sort((a, b) => b.a - a.a).map(i => h("div", null, h("span", null, i.n, h("span", { style: "color:#8f8f88" }, " · " + i.d)), h("span", { class: "num" }, eur.format(i.a))))));
+    if (open) box.append(h("div", { class: "citems" }, r.items.sort((a, b) => b.a - a.a).map(i => h("div", null, h("span", null, i.n, h("span", { class: "muted" }, " · " + i.d)), h("span", { class: "num" }, eur.format(i.a))))));
   });
   if (!rows.length) box.append(h("p", { class: "empty" }, "Sem despesas neste ciclo."));
 }
@@ -579,29 +631,23 @@ function setupForms() {
   $("#gl-form").onsubmit = async e => { e.preventDefault(); if (await run(sb.from("goals").insert({ title: $("#gl-title").value.trim(), horizon: $("#gl-h").value, who: $("#gl-who").value }), "Objetivo criado")) $("#gl-title").value = ""; };
 }
 
-/* ================= login visual: living line field ================= */
+/* ================= login visual: editorial, a single slow hairline horizon ================= */
 let fieldRAF = null;
 function startField() {
-  const c = $("#field"), ctx = c.getContext("2d"); let w, hgt, dpr, mx = -1e4, my = -1e4, tmx = mx, tmy = my, vis = true;
+  const c = $("#field"), ctx = c.getContext("2d"); let w, hgt, dpr, vis = true;
   const size = () => { dpr = Math.min(2, devicePixelRatio || 1); w = c.clientWidth; hgt = c.clientHeight; c.width = w * dpr; c.height = hgt * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
   size(); addEventListener("resize", size);
-  addEventListener("pointermove", e => { tmx = e.clientX; tmy = e.clientY; });
   document.addEventListener("visibilitychange", () => vis = !document.hidden);
-  const N = 46, reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const draw = t => {
     fieldRAF = requestAnimationFrame(draw); if (!vis) return;
-    mx += (tmx - mx) * .12; my += (tmy - my) * .12;
+    const time = reduce ? 0 : t * .00012;
     ctx.clearRect(0, 0, w, hgt);
-    const time = reduce ? 0 : t * .00025;
-    for (let i = 0; i < N; i++) {
-      const y0 = hgt * .12 + (hgt * .62) * (i / (N - 1)), acc = i === 31;
-      ctx.beginPath(); ctx.lineWidth = acc ? 1.6 : .8; ctx.strokeStyle = acc ? "#FF4F1F" : `rgba(13,13,12,${.08 + .1 * Math.sin(i * .3) ** 2})`;
-      for (let x = 0; x <= w; x += 12) {
-        const n = Math.sin(x * .004 + time * 3 + i * .22) * 14 + Math.sin(x * .011 - time * 2 + i * .5) * 6 + Math.sin(x * .0017 + time + i * .09) * 22;
-        const dx = x - mx, dy = y0 - my, d2 = dx * dx + dy * dy, bulge = -Math.exp(-d2 / 22000) * 38 * Math.sign(dy || 1);
-        const y = y0 + n + bulge; x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+    const cx = w * .74, cy = hgt * .42, R = Math.min(w, hgt) * .26;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath(); ctx.lineWidth = 1;
+      ctx.strokeStyle = i === 0 ? "rgba(92,104,62,.55)" : `rgba(28,27,24,${.12 - i * .03})`;
+      ctx.ellipse(cx + Math.sin(time + i) * 6, cy + Math.cos(time * .8 + i) * 6, R + i * 22, R + i * 22, 0, 0, Math.PI * 2); ctx.stroke();
     }
   };
   fieldRAF = requestAnimationFrame(draw);

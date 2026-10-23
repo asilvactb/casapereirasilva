@@ -88,7 +88,7 @@ function totals(k) {
    Forecast = cash now + salaries still to come this cycle − fixed bills still unpaid this cycle (day-to-day spending excluded). */
 function cash() {
   const asOf = new Date(S.settings.balances_as_of || 0), now = new Date(), k = cycleKey(TODAY()), end = cycleRange(k).end;
-  const base = S.accounts.reduce((a, x) => a + +x.balance, 0);
+  const base = S.settings.balance_start != null ? +S.settings.balance_start : S.accounts.reduce((a, x) => a + +x.balance, 0);
   let moved = 0;
   S.tx.forEach(x => { if (new Date(x.created_at) > asOf) moved += x.type === "receita" ? +x.amount : -x.amount; });
   S.paid.forEach(p => { if (p.paid_at && new Date(p.paid_at) > asOf) { const f = S.fixed.find(f => f.id === p.item_id); if (f && f.kind === "expense") moved -= +f.amount; } });
@@ -184,9 +184,19 @@ function route() {
   S.view = ["hoje", "agenda", "financas", "compras", "tarefas", "objetivos"].includes(v) ? v : "hoje";
   $$(".view").forEach(s => s.hidden = s.id !== "v-" + S.view);
   $$("[data-v]").forEach(a => a.classList.toggle("on", a.dataset.v === S.view));
+  moveInd();
   window.scrollTo({ top: 0, behavior: "instant" });
   render();
 }
+/* sliding pill behind the active nav item */
+function moveInd() {
+  for (const bar of $$(".nav,.tabbar")) {
+    let i = bar.querySelector(".ind"); if (!i) { i = document.createElement("span"); i.className = "ind"; bar.prepend(i); }
+    const a = bar.querySelector("a.on"); if (!a || !a.offsetWidth) { i.style.opacity = 0; continue; }
+    Object.assign(i.style, { opacity: 1, width: a.offsetWidth + "px", height: a.offsetHeight + "px", transform: `translate(${a.offsetLeft}px,${a.offsetTop}px)` });
+  }
+}
+addEventListener("resize", () => moveInd());
 function render() {
   if (!S.who) return;
   const n = S.shopping.filter(i => !i.done).length; $("#nav-shop").textContent = n || "";
@@ -493,17 +503,14 @@ function renderCash() {
   const since = C.asOf.getTime() ? new Intl.DateTimeFormat("pt-PT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(C.asOf) : "—";
   const big = (label, v, sub, cls = "") => { const b = h("b", { class: "num " + (v < 0 ? "neg " : "") + cls }, eur0.format(0)); countUp(b, v, eur0.format); return h("div", null, h("span", { class: "mono small muted" }, label), b, sub ? h("span", { class: "small muted" }, sub) : null); };
   box.append(
-    h("div", { class: "block-head" }, h("h3", null, "Agora"), h("span", { class: "mono small muted" }, "saldos confirmados a " + since)),
+    h("div", { class: "block-head" }, h("h3", null, "Agora"), h("span", { class: "mono small muted" }, "desde " + since)),
     h("div", { class: "cash-top" },
-      big("Disponível agora", C.now, C.moved ? `${eur.format(C.base)} nas contas ${C.moved > 0 ? "+" : "−"} ${eur.format(Math.abs(C.moved))} desde então` : "soma das contas"),
+      big("Disponível agora", C.now, C.moved ? `${eur0.format(C.base)} de partida ${C.moved > 0 ? "+" : "−"} ${eur0.format(Math.abs(C.moved))} em movimentos` : "ponto de partida"),
       big("Fim do ciclo · " + F.short.format(C.end), C.forecast, `+${eur0.format(C.incoming)} a receber · −${eur0.format(C.unpaid)} fixas por pagar · sem dia a dia`),
       big("Poupanças", C.saved, "fora das contas do dia a dia")));
-  const list = h("div", { class: "accts" });
-  [...S.accounts].sort((a, b) => a.sort - b.sort).forEach(a => list.append(h("div", { class: "row" }, h("span", { class: "sw " + (a.who || "familia") }),
-    h("span", { class: "t" }, ed(a.name, a.name, v => run(sb.from("accounts").update({ name: v }).eq("id", a.id)))),
-    ed(eur.format(+a.balance), +a.balance, async v => { if (v == null) return; await run(sb.from("accounts").update({ balance: v, updated_at: new Date().toISOString() }).eq("id", a.id)); await run(sb.from("settings").upsert({ key: "balances_as_of", value: new Date().toISOString() }), "Saldo atualizado"); }, { type: "number", cls: "amt" }),
-    h("span"))));
-  box.append(list, h("p", { class: "small muted" }, "Toca num saldo para o atualizar. O valor disponível acompanha sozinho os movimentos, contas pagas e ordenados que entram; de vez em quando confirmem os saldos reais."));
+  const fix = ed("acertar saldo", C.now, async v => { if (v == null) return; const at = new Date().toISOString();
+    await run(sb.from("settings").upsert([{ key: "balance_start", value: v }, { key: "balances_as_of", value: at }]), "Saldo acertado"); }, { type: "number", cls: "link" });
+  box.append(h("p", { class: "small muted" }, `Posição global desde ${since}. Atualiza sozinha com cada gasto, receita, conta paga e ordenado. Só é preciso `, fix, " se alguma vez não bater certo com o banco."));
 }
 function catSel(cur, onSave, income) {
   const opts = income ? INC_CATS : [...new Set([...FIXED_CATS, ...S.budget.map(b => b.cat)])];
@@ -631,24 +638,27 @@ function setupForms() {
   $("#gl-form").onsubmit = async e => { e.preventDefault(); if (await run(sb.from("goals").insert({ title: $("#gl-title").value.trim(), horizon: $("#gl-h").value, who: $("#gl-who").value }), "Objetivo criado")) $("#gl-title").value = ""; };
 }
 
-/* ================= login visual: editorial, a single slow hairline horizon ================= */
+/* ================= login visual: soft colour blobs drifting slowly ================= */
 let fieldRAF = null;
 function startField() {
-  const c = $("#field"), ctx = c.getContext("2d"); let w, hgt, dpr, vis = true;
+  const c = $("#field"), ctx = c.getContext("2d"); let w, hgt, dpr, vis = true, mx = .5, my = .5, tmx = .5, tmy = .5;
   const size = () => { dpr = Math.min(2, devicePixelRatio || 1); w = c.clientWidth; hgt = c.clientHeight; c.width = w * dpr; c.height = hgt * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
   size(); addEventListener("resize", size);
+  addEventListener("pointermove", e => { tmx = e.clientX / innerWidth; tmy = e.clientY / innerHeight; });
   document.addEventListener("visibilitychange", () => vis = !document.hidden);
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  const blobs = [["--blob-1", .72, .3, .34], ["--blob-2", .88, .72, .3], ["--blob-3", .55, .78, .26]];
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const draw = t => {
     fieldRAF = requestAnimationFrame(draw); if (!vis) return;
-    const time = reduce ? 0 : t * .00012;
+    mx += (tmx - mx) * .03; my += (tmy - my) * .03;
+    const time = reduce ? 0 : t * .00025;
     ctx.clearRect(0, 0, w, hgt);
-    const cx = w * .74, cy = hgt * .42, R = Math.min(w, hgt) * .26;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath(); ctx.lineWidth = 1;
-      ctx.strokeStyle = i === 0 ? "rgba(92,104,62,.55)" : `rgba(28,27,24,${.12 - i * .03})`;
-      ctx.ellipse(cx + Math.sin(time + i) * 6, cy + Math.cos(time * .8 + i) * 6, R + i * 22, R + i * 22, 0, 0, Math.PI * 2); ctx.stroke();
-    }
+    blobs.forEach(([v, x, y, r], i) => {
+      const cx = w * (x + Math.sin(time + i * 2) * .06 + (mx - .5) * .05 * (i + 1)), cy = hgt * (y + Math.cos(time * .8 + i) * .07 + (my - .5) * .05 * (i + 1)), R = Math.max(w, hgt) * r;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R); const c0 = col(v); g.addColorStop(0, c0); g.addColorStop(1, c0.replace(/,\s*[\d.]+\)$/, ",0)"));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, hgt);
+    });
   };
   fieldRAF = requestAnimationFrame(draw);
 }

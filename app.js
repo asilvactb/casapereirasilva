@@ -186,6 +186,7 @@ function route() {
   $$("[data-v]").forEach(a => a.classList.toggle("on", a.dataset.v === S.view));
   moveInd();
   window.scrollTo({ top: 0, behavior: "instant" });
+  const view = $("#v-" + S.view); view.classList.add("fresh"); clearTimeout(route.t); route.t = setTimeout(() => view.classList.remove("fresh"), 2200);
   render();
 }
 /* sliding pill behind the active nav item */
@@ -197,11 +198,17 @@ function moveInd() {
   }
 }
 addEventListener("resize", () => moveInd());
+/* spotlight that follows the pointer inside cards */
+document.addEventListener("pointermove", e => {
+  const c = e.target.closest?.(".block,.kpi,.goal,.shop"); if (!c) return;
+  const r = c.getBoundingClientRect(); c.style.setProperty("--mx", e.clientX - r.left + "px"); c.style.setProperty("--my", e.clientY - r.top + "px");
+}, { passive: true });
 function render() {
   if (!S.who) return;
   const n = S.shopping.filter(i => !i.done).length; $("#nav-shop").textContent = n || "";
   ({ hoje: renderHoje, agenda: renderAgenda, financas: renderFin, compras: renderShop, tarefas: renderTasks, objetivos: renderGoals })[S.view]();
   reveal();
+  $$("#v-" + S.view + " :is(.row,.ev,.bud,.cbar)").forEach((r, i) => r.style.setProperty("--i", Math.min(i, 18)));
 }
 
 /* header hide on scroll */

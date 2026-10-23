@@ -628,7 +628,7 @@ const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ
 /* ================= REFEIÇÕES ================= */
 const SLOTS = [["almoco", "Almoço"], ["jantar", "Jantar"]];
 const MAIN_TAGS = ["peixe", "carne", "vegetariano", "massa", "sopa"];
-const TAG_SET = ["peixe", "carne", "vegetariano", "massa", "sopa", "rápido", "forno", "miúdos"];
+const TAG_SET = ["italiana", "peixe", "carne", "vegetariano", "massa", "arroz", "sopa", "rápido", "forno", "miúdos"];
 const recipeById = id => S.recipes.find(r => r.id === id);
 const activeRecipes = () => S.recipes.filter(r => r.status !== "arquivada");
 const monday = d => addDays(d, -((d.getDay() + 6) % 7));
@@ -836,6 +836,8 @@ function guessTags(text, minutes) {
   if (!tags.length && /grao|lentilha|feijao|tofu|legumes|vegetarian|cogumelo|espinafre/.test(t)) tags.push("vegetariano");
   if (/massa|esparguete|lasanha|penne|fusilli|tagliatelle|macarrao|noodles/.test(t)) tags.push("massa");
   if (/sopa|creme de/.test(t)) tags.push("sopa");
+  if (/risott|carbonara|lasanha|bolonhes|pesto|parmes|mozzarella|gnocchi|italian/.test(t)) tags.push("italiana");
+  if (/arroz|risott/.test(t)) tags.push("arroz");
   if (/forno|assad/.test(t)) tags.push("forno");
   if (minutes && minutes <= 30) tags.push("rápido");
   return [...new Set(tags)];

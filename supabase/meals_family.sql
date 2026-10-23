@@ -1,0 +1,9 @@
+-- Meals, family and recurring tasks (applied 2026-10-23)
+create table if not exists public.recipes (id text primary key default gen_random_uuid()::text, name text not null, url text, image text, ingredients jsonb not null default '[]', steps text, tags text[] not null default '{}', minutes int, servings int, status text not null default 'nossa', loves int not null default 0, likes int not null default 0, nos int not null default 0, cooked int not null default 0, skips int not null default 0, last_cooked date, notes text, created_by text, created_at timestamptz default now());
+create table if not exists public.meal_plan (id text primary key default gen_random_uuid()::text, date date not null, slot text not null default 'jantar', recipe_id text references public.recipes(id) on delete set null, title text, status text not null default 'planeado', feedback text, created_at timestamptz default now());
+create table if not exists public.baby_items (id text primary key default gen_random_uuid()::text, name text not null, cat text, cost numeric, status text not null default 'falta', sort int default 0, created_at timestamptz default now());
+create table if not exists public.kid_items (id text primary key default gen_random_uuid()::text, kid text not null, kind text not null, title text not null, date date, done boolean not null default false, note text, created_at timestamptz default now());
+create table if not exists public.savings_moves (id text primary key default gen_random_uuid()::text, saving_id text references public.savings(id) on delete cascade, amount numeric not null, who text, at timestamptz not null default now());
+alter table public.tasks add column if not exists recur text;
+alter table public.tasks add column if not exists rotate boolean not null default false;
+-- RLS: members_all policy (public.is_member()) on each new table; all added to supabase_realtime.

@@ -62,6 +62,7 @@ async function run(p, okMsg) { const { error } = await p; if (error) { toast("N�
 const S = {
   me: null, who: null, view: "hoje",
   settings: {}, accounts: [], fixed: [], paid: [], tx: [], budget: [], savings: [], tasks: [], goals: [], shopping: [], freq: [], milestones: {}, sources: [], events: [],
+  recipes: [], meals: [], baby: [], kids: [], smoves: [], mealWeek: null, rcTag: null, rcMode: null,
   cycle: null, calMonth: null, calSel: null, tkFilter: "todas", dashOpen: new Set(), quick: [],
 };
 const cycleDay = () => Number(S.settings.cycle_day ?? 20);
@@ -92,6 +93,7 @@ function cash() {
   let moved = 0;
   S.tx.forEach(x => { if (new Date(x.created_at) > asOf) moved += x.type === "receita" ? +x.amount : -x.amount; });
   S.paid.forEach(p => { if (p.paid_at && new Date(p.paid_at) > asOf) { const f = S.fixed.find(f => f.id === p.item_id); if (f && f.kind === "expense") moved -= +f.amount; } });
+  S.smoves.forEach(m => { if (new Date(m.at) > asOf) moved -= +m.amount; });
   const pays = [];
   for (const ck of [shiftCycle(k, -1), k]) activeFixed(ck, "income").forEach(f => f.pay_day && pays.push({ f, d: cycleDue(ck, f.pay_day) }));
   pays.forEach(({ f, d }) => { if (d > asOf && d <= now) moved += +f.amount; });
@@ -106,11 +108,12 @@ function cash() {
 const TABLES = {
   settings: ["settings", "*"], accounts: ["accounts", "*"], fixed: ["fixed_items", "*"], paid: ["fixed_paid", "*"], tx: ["transactions", "*"],
   budget: ["budget", "*"], savings: ["savings", "*"], tasks: ["tasks", "*"], goals: ["goals", "*"], shopping: ["shopping", "*"],
-  freq: ["shopping_freq", "*"], milestones: ["milestones", "*"], sources: ["calendar_sources", "id,who,label,last_sync,last_error"], events: ["events", "*"],
+  freq: ["shopping_freq", "*"], recipes: ["recipes", "*"], meals: ["meal_plan", "*"], baby: ["baby_items", "*"], kids: ["kid_items", "*"], smoves: ["savings_moves", "*"], milestones: ["milestones", "*"], sources: ["calendar_sources", "id,who,label,last_sync,last_error"], events: ["events", "*"],
 };
 async function load(key) {
   const [table, cols] = TABLES[key];
   let q = sb.from(table).select(cols);
+  if (key === "meals") q = q.gte("date", ymd(addDays(TODAY(), -70)));
   if (key === "events") q = q.gte("starts_at", addDays(TODAY(), -45).toISOString()).lte("starts_at", addDays(TODAY(), 200).toISOString()).order("starts_at");
   const { data, error } = await q;
   if (error) { console.warn(table, error.message); return; }
@@ -181,7 +184,7 @@ $("#denied-out").addEventListener("click", () => sb.auth.signOut());
 window.addEventListener("hashchange", route);
 function route() {
   const v = (location.hash || "#hoje").slice(1);
-  S.view = ["hoje", "agenda", "financas", "compras", "tarefas", "objetivos"].includes(v) ? v : "hoje";
+  S.view = ["hoje", "agenda", "financas", "refeicoes", "compras", "tarefas", "familia", "objetivos"].includes(v) ? v : "hoje";
   $$(".view").forEach(s => s.hidden = s.id !== "v-" + S.view);
   $$("[data-v]").forEach(a => a.classList.toggle("on", a.dataset.v === S.view));
   moveInd();
@@ -195,9 +198,11 @@ function moveInd() {
     let i = bar.querySelector(".ind"); if (!i) { i = document.createElement("span"); i.className = "ind"; bar.prepend(i); }
     const a = bar.querySelector("a.on"); if (!a || !a.offsetWidth) { i.style.opacity = 0; continue; }
     Object.assign(i.style, { opacity: 1, width: a.offsetWidth + "px", height: a.offsetHeight + "px", transform: `translate(${a.offsetLeft}px,${a.offsetTop}px)` });
+    if (bar.scrollWidth > bar.clientWidth) bar.scrollTo({ left: a.offsetLeft - (bar.clientWidth - a.offsetWidth) / 2, behavior: "smooth" });
   }
 }
 addEventListener("resize", () => moveInd());
+document.fonts?.ready.then(() => moveInd());
 /* spotlight that follows the pointer inside cards */
 document.addEventListener("pointermove", e => {
   const c = e.target.closest?.(".block,.kpi,.goal,.shop"); if (!c) return;
@@ -206,8 +211,8 @@ document.addEventListener("pointermove", e => {
 function render() {
   if (!S.who) return;
   const n = S.shopping.filter(i => !i.done).length; $("#nav-shop").textContent = n || "";
-  ({ hoje: renderHoje, agenda: renderAgenda, financas: renderFin, compras: renderShop, tarefas: renderTasks, objetivos: renderGoals })[S.view]();
-  reveal();
+  ({ hoje: renderHoje, agenda: renderAgenda, financas: renderFin, refeicoes: renderMeals, familia: renderFamily, compras: renderShop, tarefas: renderTasks, objetivos: renderGoals })[S.view]();
+  reveal(); moveInd();
   $$("#v-" + S.view + " :is(.row,.ev,.bud,.cbar)").forEach((r, i) => r.style.setProperty("--i", Math.min(i, 18)));
 }
 
@@ -329,6 +334,10 @@ function renderHoje() {
     kpi("Fim do ciclo · " + F.short.format(C.end), C.forecast, eur0.format, C.forecast < 0 ? "neg" : ""),
     kpi("A pagar em 7 dias", billTot),
     kpi("Compras na lista", openShop, n => Math.round(n)));
+  const tn = S.meals.find(m => m.date === ymd(t) && m.slot === "jantar"), tr = tn?.recipe_id && recipeById(tn.recipe_id);
+  $("#tonight").replaceChildren(h("span", { class: "tn-l" }, "Hoje ao jantar"),
+    tn ? h("button", { class: "tn-n", type: "button", onclick: () => tr ? showRecipe(tr, tn) : (location.hash = "#refeicoes") }, tr ? tr.name : tn.title) : h("span", { class: "tn-n muted" }, "ainda nada planeado"),
+    h("button", { class: "pill ghost sm", type: "button", onclick: tonight }, h("span", { "data-t": tn ? "Trocar" : "Sugerir" }, tn ? "Trocar" : "Sugerir")));
   const evBox = $("#today-events"); evBox.replaceChildren();
   let any = 0;
   for (let i = 0; i < 7; i++) { const day = addDays(t, i); for (const e of eventsOn(day)) { if (any++ < 9) evBox.append(evRow(e, true)); } }
@@ -503,7 +512,7 @@ function renderFin() {
       h("b", null, ed(eur0.format(+s.saved), +s.saved, v => run(sb.from("savings").update({ saved: v || 0 }).eq("id", s.id)), { type: "number" })),
       h("span", { class: "mono small muted" }, "de ", ed(eur0.format(+s.target), +s.target, v => run(sb.from("savings").update({ target: v || 0 }).eq("id", s.id)), { type: "number" }), ` · ${Math.round(p)}%`),
       h("div", { class: "meter" }, h("i", { style: `width:${p}%;background:var(--accent)` })),
-      h("div", { class: "add" }, inp, h("button", { class: "pill sm", type: "button", onclick: async () => { const v = parseFloat(inp.value.replace(",", ".")); if (!v) return; await run(sb.from("savings").update({ saved: Math.max(0, +s.saved + v) }).eq("id", s.id), "Poupança atualizada"); } }, h("span", { "data-t": "Somar" }, "Somar"))))); });
+      h("div", { class: "add" }, inp, h("button", { class: "pill sm", type: "button", onclick: () => saveMove(s.id, parseFloat(inp.value.replace(",", ".")))  }, h("span", { "data-t": "Somar" }, "Somar"))))); });
 }
 function renderCash() {
   const C = cash(), box = $("#cash"); box.replaceChildren();
@@ -588,11 +597,7 @@ function renderTasks() {
   if (showDone) groups.push(["Concluídas", ts.filter(x => x.done)]);
   const box = h("div", { class: "shop" });
   for (const [n, items] of groups) { if (!items.length) continue;
-    box.append(h("p", { class: "sec-label" }, `${n} · ${items.length}`), ...items.sort((a, b) => (a.due || "9").localeCompare(b.due || "9")).map(x => h("div", { class: "row" + (x.done ? " paid" : "") },
-      tick(x.done, () => run(sb.from("tasks").update({ done: !x.done, done_at: x.done ? null : new Date().toISOString() }).eq("id", x.id)), "Concluir " + x.title),
-      h("span", { class: "t" }, ed(x.title, x.title, v => run(sb.from("tasks").update({ title: v }).eq("id", x.id))), h("span", { class: "sub" }, h("span", { class: "chip " + x.who }, WHO[x.who] || x.who), " ", x.cat || "")),
-      x.due ? h("span", { class: "chip " + (!x.done && x.due < t ? "late" : "") }, F.short.format(parseYmd(x.due))) : h("span"),
-      delBtn(() => run(sb.from("tasks").delete().eq("id", x.id)))))); }
+    box.append(h("p", { class: "sec-label" }, `${n} · ${items.length}`), ...items.sort((a, b) => (a.due || "9").localeCompare(b.due || "9")).map(taskRow)); }
   if (!box.childNodes.length) box.append(h("p", { class: "empty", style: "padding:20px 0" }, "Nada pendente."));
   $("#tk-list").replaceChildren(box);
 }
@@ -609,6 +614,347 @@ function renderGoals() {
         h("div", { class: "ctl" }, h("span", { class: "seg" }, h("button", { type: "button", onclick: () => run(sb.from("goals").update({ progress: Math.max(0, g.progress - 10) }).eq("id", g.id)) }, "−"), h("span", { class: "pct", style: "padding:8px 6px" }, g.progress + "%"), h("button", { type: "button", onclick: () => run(sb.from("goals").update({ progress: Math.min(100, g.progress + 10) }).eq("id", g.id)) }, "+")),
           delBtn(() => run(sb.from("goals").delete().eq("id", g.id)))))) : h("p", { class: "empty" }, "—")));
   }
+}
+
+/* ================= shared dialog ================= */
+function openDlg(...kids) {
+  const d = $("#dlg"); $("#dlg-body").replaceChildren(h("button", { class: "dlg-x", type: "button", "aria-label": "Fechar", onclick: () => d.close() }, "×"), ...kids.flat().filter(k => k != null && k !== false));
+  if (!d.open) d.showModal();
+}
+const closeDlg = () => $("#dlg").open && $("#dlg").close();
+const rnd = () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+
+/* ================= REFEIÇÕES ================= */
+const SLOTS = [["almoco", "Almoço"], ["jantar", "Jantar"]];
+const MAIN_TAGS = ["peixe", "carne", "vegetariano", "massa", "sopa"];
+const TAG_SET = ["peixe", "carne", "vegetariano", "massa", "sopa", "rápido", "forno", "miúdos"];
+const recipeById = id => S.recipes.find(r => r.id === id);
+const activeRecipes = () => S.recipes.filter(r => r.status !== "arquivada");
+const monday = d => addDays(d, -((d.getDay() + 6) % 7));
+
+/* How much we want a recipe right now: what we said about it, how long since we ate it, and whether it is ours yet. */
+function recipeScore(r, ref = TODAY()) {
+  const fb = r.loves + r.likes + r.nos;
+  const pref = fb ? (2 * r.loves + r.likes - 3 * r.nos) / fb : 0;
+  const days = r.last_cooked ? dayDiff(parseYmd(r.last_cooked), ref) : 45;
+  const fresh = days < 7 ? -2 : Math.min(days, 45) / 45 * 1.5;
+  return (r.status === "nossa" ? 1 : .3) + pref * 1.2 + fresh - .35 * Math.min(r.skips, 4) + Math.min(r.cooked, 6) * .08;
+}
+function reasonFor(r) {
+  const bits = [];
+  if (r.loves) bits.push(`adoraram ${r.loves}×`); else if (r.likes) bits.push(`gostaram ${r.likes}×`);
+  if (r.nos) bits.push(`${r.nos}× não`);
+  if (r.last_cooked) { const d = dayDiff(parseYmd(r.last_cooked), TODAY()); bits.push(d <= 0 ? "feita hoje" : `feita há ${d} ${d === 1 ? "dia" : "dias"}`); }
+  else bits.push(r.status === "ideia" ? "ideia nova" : "ainda não feita");
+  return bits.join(" · ");
+}
+
+/* "500 g de bacalhau desfiado" → { name: "Bacalhau desfiado", qty: "500 g" } */
+const UNITS = "kg|g|gr|mg|l|dl|cl|ml|colher(?:es)?(?: de (?:sopa|chá|sobremesa))?|c\\.? ?(?:de )?(?:sopa|chá)|chávenas?|copos?|latas?|pacotes?|embalage(?:m|ns)|unidades?|dentes?|folhas?|ramos?|pitadas?|fatias?|postas?|molhos?|q\\.?b\\.?";
+function splitIng(s) {
+  const t = String(s).trim().replace(/^[-•*·–]\s*/, "");
+  const m = t.match(new RegExp(`^((?:\\d+[\\d.,/]*|½|¼|¾|meia|meio|uma?|dois|duas|três)\\s*(?:(?:${UNITS})(?![a-zà-úç]))?\\.?\\s*(?:de\\s+)?)(.+)$`, "i"));
+  let name = m ? m[2] : t; const qty = m ? m[1].replace(/\s*de\s*$/i, "").trim() : "";
+  name = name.replace(/\(.*?\)/g, "").split(/,| q\.?b\.?| a gosto| para /i)[0].trim();
+  return { name: cap(name), qty };
+}
+const PANTRY = /^(sal|sal grosso|pimenta|pimenta preta|azeite|água|óleo|vinagre|açúcar|farinha|louro|folha de louro|colorau|noz-moscada|caril em pó|orégãos|oregãos|salsa seca)$/i;
+const FRESH = /(peixe|bacalhau|salm|dourad|robalo|pescad|camar|frango|peru|vaca|porco|carne|bife|febra|pato|chouri|ovo|leite|natas|queijo|iogurte|manteiga|alface|tomate|cebola|alho|batata|cenoura|courgette|curgete|br[oó]colo|espinafre|pimento|ab[oó]bora|beringela|lim[aã]o|laranja|ma[cç][aã]|banana|fruta|salsa|coentros|cogumelo|ervilha|feij[aã]o verde)/i;
+
+function renderMeals() {
+  if (!S.mealWeek) S.mealWeek = monday(TODAY());
+  const w0 = S.mealWeek, days = [...Array(7)].map((_, i) => addDays(w0, i)), t = ymd(TODAY());
+  const isThis = ymd(w0) === ymd(monday(TODAY()));
+  $("#wk-title").textContent = isThis ? "Esta semana" : ymd(w0) > t ? "Semana seguinte" : "Semana passada";
+  $("#wk-range").textContent = `${F.short.format(days[0])} – ${F.short.format(days[6])}`;
+  const wk = $("#week"); wk.replaceChildren();
+  for (const d of days) {
+    const ds = ymd(d), card = h("div", { class: "day rv" + (ds === t ? " today" : "") + (ds < t ? " past" : "") });
+    card.append(h("div", { class: "day-h" }, h("b", null, cap(F.wd.format(d)).replace(".", "")), h("span", { class: "muted" }, d.getDate())));
+    for (const [slot, label] of SLOTS) {
+      const m = S.meals.find(x => x.date === ds && x.slot === slot);
+      card.append(m ? mealSlot(m, label) : h("button", { class: "slot empty", type: "button", onclick: () => pickMeal(ds, slot) }, "+ " + label));
+    }
+    wk.append(card);
+  }
+  // library
+  const q = norm($("#rc-q").value), tag = S.rcTag;
+  const list = activeRecipes().filter(r => (!tag || r.tags.includes(tag)) && (!q || norm(r.name).includes(q) || r.ingredients.some(i => norm(i).includes(q))))
+    .map(r => ({ r, s: recipeScore(r) })).sort((a, b) => b.s - a.s);
+  $("#rc-count").textContent = `${activeRecipes().filter(r => r.status === "nossa").length} nossas · ${activeRecipes().filter(r => r.status === "ideia").length} ideias`;
+  $("#rc-tags").replaceChildren(...TAG_SET.map(g => h("button", { type: "button", class: "chip" + (tag === g ? " on" : ""), onclick: () => { S.rcTag = tag === g ? null : g; renderMeals(); } }, g)));
+  $("#rc-list").replaceChildren(...(list.length ? list.map(({ r }) => h("button", { class: "rc rv", type: "button", onclick: () => showRecipe(r) },
+    r.image ? h("img", { src: r.image, alt: "", loading: "lazy", referrerpolicy: "no-referrer" }) : h("span", { class: "rc-ph" }, r.name.slice(0, 1)),
+    h("span", { class: "rc-t" }, h("b", null, r.name), h("span", { class: "sub" }, reasonFor(r)),
+      h("span", { class: "rc-tags" }, r.status === "ideia" ? h("span", { class: "chip soon" }, "ideia") : null, r.tags.slice(0, 3).map(g => h("span", { class: "chip" }, g)), r.minutes ? h("span", { class: "chip" }, r.minutes + " min") : null))))
+    : [h("p", { class: "empty" }, "Nenhuma receita com esse filtro.")]));
+  if (!$("#rc-editor").childNodes.length) setRcMode(S.rcMode || "link");
+}
+function mealSlot(m, label) {
+  const r = m.recipe_id && recipeById(m.recipe_id), name = r ? r.name : m.title || "—", past = m.date <= ymd(TODAY());
+  const box = h("div", { class: "slot" + (m.status === "feito" ? " done" : "") + (m.status === "saltado" ? " skipped" : "") });
+  box.append(h("span", { class: "slot-l" }, label), h("button", { class: "slot-n", type: "button", onclick: () => r ? showRecipe(r, m) : pickMeal(m.date, m.slot) }, name));
+  if (r && m.status === "planeado") box.append(h("span", { class: "slot-r" }, reasonFor(r)));
+  if (m.status === "planeado" && past) box.append(h("div", { class: "fb" },
+    ...(r ? [["adorei", "Adorei"], ["bom", "Bom"], ["nao", "Não repetir"]] : [["feito", "Feito"]]).map(([k, l]) => h("button", { type: "button", class: "fb-" + k, onclick: () => mealFeedback(m, k) }, l)),
+    h("button", { type: "button", class: "fb-skip", onclick: () => mealFeedback(m, "saltado") }, "Não fizemos")));
+  else if (m.status !== "planeado") box.append(h("button", { type: "button", class: "chip fbchip " + (m.feedback || "saltado"), title: "Desfazer", onclick: () => undoFeedback(m) },
+    m.status === "saltado" ? "Não fizemos" : { adorei: "Adorei", bom: "Bom", nao: "Não repetir" }[m.feedback] || "Feito", " ↺"));
+  box.append(h("button", { class: "slot-x", type: "button", "aria-label": "Tirar do plano", onclick: () => removeMeal(m) }, "×"));
+  return box;
+}
+async function planMeal(date, slot, recipe, title) {
+  const ex = S.meals.find(x => x.date === date && x.slot === slot);
+  const row = { date, slot, recipe_id: recipe ? recipe.id : null, title: recipe ? null : title, status: "planeado", feedback: null };
+  const ok = ex ? await run(sb.from("meal_plan").update(row).eq("id", ex.id)) : await run(sb.from("meal_plan").insert(row));
+  if (ok) { closeDlg(); toast(`${recipe ? recipe.name : title} · ${cap(F.wd.format(parseYmd(date)))}`); }
+}
+function pickMeal(date, slot) {
+  const inp = h("input", { type: "search", placeholder: "Procurar ou escrever (ex.: Sobras, Jantar fora)", class: "dlg-search" });
+  const out = h("div", { class: "pick" });
+  const draw = () => {
+    const q = norm(inp.value);
+    const items = activeRecipes().filter(r => !q || norm(r.name).includes(q)).map(r => ({ r, s: recipeScore(r, parseYmd(date)) })).sort((a, b) => b.s - a.s).slice(0, 30);
+    out.replaceChildren(
+      inp.value.trim() ? h("button", { class: "pick-i free", type: "button", onclick: () => planMeal(date, slot, null, cap(inp.value.trim())) }, h("b", null, `Usar "${cap(inp.value.trim())}"`), h("span", { class: "sub" }, "sem receita")) : null,
+      ...items.map(({ r }) => h("button", { class: "pick-i", type: "button", onclick: () => planMeal(date, slot, r) }, h("b", null, r.name), h("span", { class: "sub" }, reasonFor(r)))));
+  };
+  inp.oninput = draw; draw();
+  openDlg(h("h3", null, `${SLOTS.find(s => s[0] === slot)[1]} de ${F.long.format(parseYmd(date))}`), inp, out);
+  setTimeout(() => inp.focus(), 50);
+}
+async function bumpRecipe(r, patch) { await run(sb.from("recipes").update(patch).eq("id", r.id)); }
+async function mealFeedback(m, fb) {
+  const r = m.recipe_id && recipeById(m.recipe_id);
+  if (!await run(sb.from("meal_plan").update({ status: fb === "saltado" ? "saltado" : "feito", feedback: fb === "saltado" || fb === "feito" ? null : fb }).eq("id", m.id))) return;
+  if (!r) return;
+  if (fb === "saltado") return bumpRecipe(r, { skips: r.skips + 1 });
+  if (fb === "feito") return bumpRecipe(r, { cooked: r.cooked + 1, last_cooked: !r.last_cooked || r.last_cooked < m.date ? m.date : r.last_cooked });
+  const col = { adorei: "loves", bom: "likes", nao: "nos" }[fb];
+  await bumpRecipe(r, { [col]: r[col] + 1, cooked: r.cooked + 1, last_cooked: !r.last_cooked || r.last_cooked < m.date ? m.date : r.last_cooked, status: r.status === "ideia" && fb !== "nao" ? "nossa" : r.status });
+  toast(fb === "nao" ? "Anotado: vai aparecer muito menos" : fb === "adorei" ? "Anotado: vai aparecer mais vezes" : "Anotado");
+}
+async function undoFeedback(m) {
+  const r = m.recipe_id && recipeById(m.recipe_id);
+  if (!await run(sb.from("meal_plan").update({ status: "planeado", feedback: null }).eq("id", m.id))) return;
+  if (!r) return;
+  if (m.status === "saltado") return bumpRecipe(r, { skips: Math.max(0, r.skips - 1) });
+  const col = { adorei: "loves", bom: "likes", nao: "nos" }[m.feedback];
+  if (col) await bumpRecipe(r, { [col]: Math.max(0, r[col] - 1), cooked: Math.max(0, r.cooked - 1) });
+}
+async function removeMeal(m) {
+  const r = m.recipe_id && recipeById(m.recipe_id);
+  if (await run(sb.from("meal_plan").delete().eq("id", m.id)) && r && m.status === "planeado" && m.date >= ymd(TODAY())) await bumpRecipe(r, { skips: r.skips + 1 });
+}
+/* Fill the empty dinners of the visible week: best score, a little randomness, variety across fish/meat/veg, quick dishes on weekdays. */
+async function suggestWeek() {
+  const t = ymd(TODAY()), days = [...Array(7)].map((_, i) => addDays(S.mealWeek, i));
+  const week = S.meals.filter(m => m.date >= ymd(days[0]) && m.date <= ymd(days[6]));
+  const used = new Set(week.map(m => m.recipe_id).filter(Boolean)), count = {};
+  week.forEach(m => { const r = recipeById(m.recipe_id); r && r.tags.forEach(g => count[g] = (count[g] || 0) + 1); });
+  const rows = [];
+  for (const d of days) {
+    const ds = ymd(d); if (ds < t || week.some(m => m.date === ds && m.slot === "jantar")) continue;
+    const weekday = d.getDay() >= 1 && d.getDay() <= 4;
+    const best = activeRecipes().filter(r => !used.has(r.id) && r.nos < 2 + r.loves).map(r => {
+      let s = recipeScore(r, d) + rnd() * .8;
+      if (weekday) { if (r.minutes > 45) s -= .8; if (r.tags.includes("rápido")) s += .3; }
+      MAIN_TAGS.forEach(g => { if (r.tags.includes(g)) s -= .7 * (count[g] || 0); });
+      if (r.tags.includes("peixe") && (count.peixe || 0) < 2) s += .5;
+      return { r, s };
+    }).sort((a, b) => b.s - a.s)[0];
+    if (!best) break;
+    used.add(best.r.id); best.r.tags.forEach(g => count[g] = (count[g] || 0) + 1);
+    rows.push({ date: ds, slot: "jantar", recipe_id: best.r.id, status: "planeado" });
+  }
+  if (!rows.length) return toast("Os jantares desta semana já estão todos planeados");
+  if (await run(sb.from("meal_plan").insert(rows))) toast(`Sugeri ${rows.length} ${rows.length === 1 ? "jantar" : "jantares"}. Para trocar, toca no nome.`);
+}
+function tonight() {
+  const t = ymd(TODAY()), have = S.meals.find(m => m.date === t && m.slot === "jantar");
+  const top = activeRecipes().filter(r => r.nos < 2 + r.loves).map(r => ({ r, s: recipeScore(r) + rnd() * 1.2 })).sort((a, b) => b.s - a.s).slice(0, 3);
+  openDlg(h("h3", null, "O que jantamos hoje?"), have ? h("p", { class: "small muted" }, `Já está planeado: ${have.recipe_id ? recipeById(have.recipe_id)?.name : have.title}. Escolher outro substitui.`) : null,
+    h("div", { class: "pick" }, ...top.map(({ r }) => h("button", { class: "pick-i", type: "button", onclick: () => planMeal(t, "jantar", r) }, h("b", null, r.name), h("span", { class: "sub" }, reasonFor(r) + (r.minutes ? ` · ${r.minutes} min` : ""))))),
+    h("button", { class: "pill ghost sm", type: "button", onclick: tonight }, h("span", { "data-t": "Outras três" }, "Outras três")));
+}
+async function mealsToShopping() {
+  const t = ymd(TODAY()), days = [...Array(7)].map((_, i) => ymd(addDays(S.mealWeek, i)));
+  const meals = S.meals.filter(m => days.includes(m.date) && m.date >= t && m.status === "planeado" && m.recipe_id);
+  if (!meals.length) return toast("Não há refeições planeadas com receita nesta semana");
+  const agg = new Map();
+  for (const m of meals) for (const ing of recipeById(m.recipe_id)?.ingredients || []) {
+    const { name, qty } = splitIng(ing); if (!name || PANTRY.test(name)) continue;
+    const k = norm(name), cur = agg.get(k) || { name, qty: [] }; if (qty) cur.qty.push(qty); agg.set(k, cur);
+  }
+  const open = new Set(S.shopping.filter(i => !i.done).map(i => norm(i.name)));
+  const rows = [...agg.entries()].filter(([k]) => !open.has(k)).map(([, v]) => {
+    const f = S.freq.find(x => norm(x.name) === norm(v.name));
+    return { name: v.name, qty: v.qty.join(" + ") || null, sec: f?.sec || (FRESH.test(v.name) ? "Frescos" : "Supermercado"), who: S.who };
+  });
+  if (!rows.length) return toast("Já está tudo na lista de compras");
+  if (await run(sb.from("shopping").insert(rows))) toast(`${rows.length} ingredientes adicionados às compras`);
+}
+function showRecipe(r, meal) {
+  const nextFree = () => { for (let i = 0; i < 14; i++) { const ds = ymd(addDays(TODAY(), i)); if (!S.meals.some(m => m.date === ds && m.slot === "jantar")) return ds; } return ymd(TODAY()); };
+  openDlg(
+    r.image ? h("img", { class: "dlg-img", src: r.image, alt: "", referrerpolicy: "no-referrer" }) : null,
+    h("h3", null, r.name),
+    h("p", { class: "small muted" }, [reasonFor(r), r.minutes ? r.minutes + " min" : null, r.servings ? r.servings + " pessoas" : null].filter(Boolean).join(" · ")),
+    h("div", { class: "rc-tags" }, r.status === "ideia" ? h("span", { class: "chip soon" }, "ideia") : null, r.tags.map(g => h("span", { class: "chip" }, g))),
+    r.ingredients.length ? h("div", null, h("p", { class: "sec-label" }, "Ingredientes"), h("ul", { class: "ing" }, r.ingredients.map(i => h("li", null, i)))) : null,
+    r.steps ? h("div", null, h("p", { class: "sec-label" }, "Preparação"), h("p", { class: "steps" }, r.steps)) : null,
+    r.url ? h("p", null, h("a", { class: "link", href: r.url, target: "_blank", rel: "noopener" }, "Abrir a receita original ↗")) : null,
+    h("div", { class: "dlg-actions" },
+      meal ? null : h("button", { class: "pill sm", type: "button", onclick: () => planMeal(nextFree(), "jantar", r) }, h("span", { "data-t": "Planear jantar" }, "Planear jantar")),
+      r.status === "ideia" ? h("button", { class: "pill ghost sm", type: "button", onclick: async () => { await bumpRecipe(r, { status: "nossa" }); closeDlg(); } }, h("span", { "data-t": "É das nossas" }, "É das nossas")) : null,
+      h("button", { class: "pill ghost sm", type: "button", onclick: () => { closeDlg(); S.rcMode = "manual"; setRcMode("manual", r); $("#rc-add").scrollIntoView({ behavior: "smooth" }); } }, h("span", { "data-t": "Editar" }, "Editar")),
+      h("button", { class: "pill ghost sm", type: "button", onclick: async () => { await bumpRecipe(r, { status: "arquivada" }); closeDlg(); toast("Receita arquivada"); } }, h("span", { "data-t": "Não nos interessa" }, "Não nos interessa"))));
+}
+/* Add / edit recipe: link import (edge function), pasted text, or manual. All three end in the same editable form. */
+function setRcMode(mode, edit) {
+  S.rcMode = mode; $$("#rc-mode button").forEach(b => b.classList.toggle("on", b.dataset.m === mode));
+  const src = $("#rc-src"); src.replaceChildren(); $("#rc-editor").replaceChildren();
+  if (mode === "link") {
+    const i = h("input", { type: "url", placeholder: "https://… link de uma receita", required: true });
+    const b = h("button", { class: "pill sm", type: "submit" }, h("span", { "data-t": "Importar" }, "Importar"));
+    src.append(h("form", { class: "row-form", onsubmit: async e => { e.preventDefault(); b.disabled = true; b.firstChild.textContent = "A ler…";
+      const { data, error } = await sb.functions.invoke("import-recipe", { body: { url: i.value.trim() } }); b.disabled = false; b.firstChild.textContent = "Importar";
+      if (error || data?.error) return toast("Não consegui ler esse link" + (data?.error ? `: ${data.error}` : ""));
+      if (data.partial) toast("O site não tem a receita em formato legível. Completa à mão.");
+      recipeEditor({ name: data.name, ingredients: data.ingredients, steps: data.steps, minutes: data.minutes, servings: data.servings, image: data.image, url: data.url, tags: guessTags(data.name + " " + (data.keywords || []).join(" ") + " " + data.ingredients.join(" "), data.minutes) });
+    } }, i, b));
+  } else if (mode === "texto") {
+    const ta = h("textarea", { rows: 7, placeholder: "Cola aqui a receita (nome na primeira linha, depois ingredientes e preparação)" });
+    src.append(h("div", { class: "rc-paste" }, ta, h("button", { class: "pill sm", type: "button", onclick: () => { const p = parseRecipeText(ta.value); if (!p.name) return toast("Cola primeiro o texto"); recipeEditor({ ...p, tags: guessTags(p.name + " " + p.ingredients.join(" "), null) }); } }, h("span", { "data-t": "Ler" }, "Ler"))));
+  } else recipeEditor(edit || { name: "", ingredients: [], steps: "", tags: [] });
+}
+function guessTags(text, minutes) {
+  const t = norm(text), tags = [];
+  if (/bacalhau|salmao|dourada|robalo|pescada|atum|peixe|camarao|polvo|lulas|marisco|sardinha/.test(t)) tags.push("peixe");
+  if (/frango|vaca|porco|carne|bife|pato|peru|febra|chourico|hamburguer|bolonhesa/.test(t)) tags.push("carne");
+  if (!tags.length && /grao|lentilha|feijao|tofu|legumes|vegetarian|cogumelo|espinafre/.test(t)) tags.push("vegetariano");
+  if (/massa|esparguete|lasanha|penne|fusilli|tagliatelle|macarrao|noodles/.test(t)) tags.push("massa");
+  if (/sopa|creme de/.test(t)) tags.push("sopa");
+  if (/forno|assad/.test(t)) tags.push("forno");
+  if (minutes && minutes <= 30) tags.push("rápido");
+  return [...new Set(tags)];
+}
+function parseRecipeText(raw) {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean); if (!lines.length) return {};
+  const name = lines.shift().replace(/^#+\s*/, "");
+  const iIng = lines.findIndex(l => /^ingredientes/i.test(l)), iSteps = lines.findIndex(l => /^(prepara|modo de prepara|instru|passos|como fazer)/i.test(l));
+  let ingredients, steps;
+  if (iIng >= 0) { ingredients = lines.slice(iIng + 1, iSteps > iIng ? iSteps : undefined); steps = iSteps >= 0 ? lines.slice(iSteps + 1) : (iIng > 0 ? lines.slice(0, iIng) : []); }
+  else { ingredients = lines.filter(l => /^([-•*·]|\d+[\d.,/]*\s*(kg|g|ml|l|dl|colher|ch[aá]vena|lata|dente|unidade)?\b)/i.test(l) && l.length < 80); steps = lines.filter(l => !ingredients.includes(l)); }
+  return { name, ingredients: ingredients.map(l => l.replace(/^[-•*·]\s*/, "")), steps: steps.join("\n") };
+}
+function recipeEditor(r) {
+  const f = (tag, attrs, val) => { const el = h(tag, attrs); el.value = val ?? ""; return el; };
+  const name = f("input", { placeholder: "Nome", required: true }, r.name);
+  const ing = f("textarea", { rows: 6, placeholder: "Ingredientes, um por linha (ex.: 500 g de bacalhau)" }, (r.ingredients || []).join("\n"));
+  const steps = f("textarea", { rows: 5, placeholder: "Preparação (opcional)" }, r.steps);
+  const mins = f("input", { type: "number", min: 0, placeholder: "Minutos" }, r.minutes);
+  const tagsSel = new Set(r.tags || []);
+  const tagBox = h("div", { class: "chips" }, TAG_SET.map(g => { const b = h("button", { type: "button", class: "chip" + (tagsSel.has(g) ? " on" : "") }, g); b.onclick = () => { tagsSel.has(g) ? tagsSel.delete(g) : tagsSel.add(g); b.classList.toggle("on"); }; return b; }));
+  const form = h("form", { class: "rc-edit", onsubmit: async e => { e.preventDefault();
+    const row = { name: cap(name.value.trim()), ingredients: ing.value.split("\n").map(s => s.trim()).filter(Boolean), steps: steps.value.trim() || null, minutes: parseInt(mins.value) || null, tags: [...tagsSel], url: r.url || null, image: r.image || null, servings: r.servings || null };
+    const ok = r.id ? await run(sb.from("recipes").update(row).eq("id", r.id), "Receita atualizada") : await run(sb.from("recipes").insert({ ...row, status: "nossa", created_by: S.who }), "Receita guardada");
+    if (ok) setRcMode(S.rcMode === "manual" ? "manual" : S.rcMode);
+  } },
+    r.image ? h("img", { class: "rc-prev-img", src: r.image, alt: "", referrerpolicy: "no-referrer" }) : null,
+    name, h("div", { class: "rc-2" }, mins, tagBox), ing, steps,
+    h("div", { class: "dlg-actions" }, h("button", { class: "pill sm", type: "submit" }, h("span", { "data-t": r.id ? "Guardar alterações" : "Guardar receita" }, r.id ? "Guardar alterações" : "Guardar receita")),
+      r.id ? h("button", { class: "pill ghost sm", type: "button", onclick: () => setRcMode("manual") }, h("span", { "data-t": "Cancelar" }, "Cancelar")) : null));
+  $("#rc-editor").replaceChildren(form);
+}
+
+/* ================= FAMÍLIA ================= */
+function renderFamily() {
+  const p = preg(), k = cycleKey(TODAY()), dueKey = cycleKey(p.due), cyclesLeft = Math.max(1, cyclesBetween(k, dueKey) + 1);
+  $("#fm-meta").textContent = `bebé: ${p.w}+${p.d} semanas · faltam ${cyclesLeft} ciclos até ao parto`;
+  // savings plan
+  const fund = S.savings.find(s => s.id === "bebe") || { id: "bebe", target: 0, saved: 0, name: "Fundo do bebé" };
+  const listCost = S.baby.filter(b => b.status === "falta").reduce((a, b) => a + (+b.cost || 0), 0);
+  const target = Math.max(+fund.target, listCost), need = Math.max(0, target - +fund.saved);
+  const per = Math.ceil(need / cyclesLeft / 5) * 5, r = cycleRange(k);
+  const thisCycle = S.smoves.filter(m => m.saving_id === "bebe" && new Date(m.at) >= r.start && new Date(m.at) < addDays(r.end, 1)).reduce((a, m) => a + +m.amount, 0);
+  const left = Math.max(0, per - thisCycle), pct = target ? Math.min(100, fund.saved / target * 100) : 0;
+  const amt = h("input", { type: "text", inputmode: "decimal", value: left ? String(left) : "", "aria-label": "Valor posto de lado" });
+  $("#baby-plan").replaceChildren(
+    h("div", { class: "block-head" }, h("h3", null, "Plano até ao bebé"), h("span", { class: "mono small muted" }, `DPP ${F.dy.format(p.due)}`)),
+    h("div", { class: "cash-top" },
+      h("div", null, h("span", { class: "mono" }, "Pôr de lado por ciclo"), h("b", null, eur0.format(per)), h("span", { class: "small" }, need ? `${eur0.format(need)} em falta ÷ ${cyclesLeft} ciclos` : "Fundo completo")),
+      h("div", null, h("span", { class: "mono" }, "Este ciclo"), h("b", null, eur0.format(thisCycle)), h("span", { class: "small muted" }, left ? `faltam ${eur0.format(left)}` : "feito")),
+      h("div", null, h("span", { class: "mono" }, "Fundo do bebé"), h("b", null, `${eur0.format(+fund.saved)}`), h("span", { class: "small muted" }, `de ${eur0.format(target)}${listCost > +fund.target ? " (pela lista)" : ""}`))),
+    h("div", { class: "meter" }, h("i", { style: `width:${pct}%` })),
+    h("div", { class: "row-form" }, amt, h("button", { class: "pill sm", type: "button", onclick: () => saveMove("bebe", parseFloat(amt.value.replace(",", "."))) }, h("span", { "data-t": "Já pus de lado" }, "Já pus de lado"))),
+    h("p", { class: "small muted" }, "Quando passarem dinheiro para a poupança, carreguem aqui: o fundo sobe e o disponível em Finanças desce."));
+  // baby list
+  const bl = $("#bb-list"); bl.replaceChildren();
+  const st = { falta: "Falta", temos: "Temos", comprado: "Comprado" }, nextSt = { falta: "temos", temos: "comprado", comprado: "falta" };
+  [...S.baby].sort((a, b) => (a.status === "falta" ? 0 : 1) - (b.status === "falta" ? 0 : 1) || a.sort - b.sort).forEach(b => bl.append(h("div", { class: "row" + (b.status !== "falta" ? " paid" : "") },
+    h("button", { type: "button", class: "chip " + (b.status === "falta" ? "soon" : "ok"), title: "Mudar estado", onclick: () => run(sb.from("baby_items").update({ status: nextSt[b.status] }).eq("id", b.id)) }, st[b.status]),
+    h("span", { class: "t" }, ed(b.name, b.name, v => run(sb.from("baby_items").update({ name: v }).eq("id", b.id))), b.cat ? h("span", { class: "sub" }, b.cat) : null),
+    ed(b.cost ? eur.format(+b.cost) : "€ ?", b.cost, v => run(sb.from("baby_items").update({ cost: v }).eq("id", b.id)), { type: "number", cls: "amt" }),
+    delBtn(() => run(sb.from("baby_items").delete().eq("id", b.id))))));
+  $("#bb-sum").textContent = `${S.baby.filter(b => b.status === "falta").length} em falta · ${eur0.format(listCost)} estimado`;
+  // leave (rules checked Oct 2026; a labour reform was in Parliament)
+  const d42 = addDays(p.due, 42), d7 = addDays(p.due, 7);
+  $("#bb-leave").replaceChildren(h("div", { class: "leave" },
+    h("p", null, h("b", null, "Rita: "), `42 dias seguidos a seguir ao parto, só dela (até ${F.short.format(d42)} se nascer na data prevista).`),
+    h("p", null, h("b", null, "Alexandre: "), `28 dias obrigatórios nos 42 dias a seguir ao nascimento, 7 deles seguidos logo após o parto (até ${F.short.format(d7)}), e o resto até ${F.short.format(d42)}. Há mais 7 dias facultativos.`),
+    h("p", null, h("b", null, "Modelos: "), "120 dias a 100%, 150 dias a 80% (100% se partilhados), 180 dias a 83% (90% se partilhados e o pai gozar pelo menos 60)."),
+    h("p", { class: "small muted" }, "Está no Parlamento uma reforma que pode mudar isto. Confirmem na Segurança Social perto da data, conforme a situação profissional de cada um.")));
+  kidList("#bb-admin", "bebe");
+  // Rodrigo
+  const birth = S.settings.rodrigo_birth;
+  const ageTxt = birth ? (() => { const b = parseYmd(birth), m = (TODAY().getFullYear() - b.getFullYear()) * 12 + TODAY().getMonth() - b.getMonth() - (TODAY().getDate() < b.getDate() ? 1 : 0); return m < 24 ? `${m} meses` : `${Math.floor(m / 12)} anos e ${m % 12} meses`; })() : null;
+  $("#kid-age").replaceChildren(ed(ageTxt ? `${ageTxt} · nasceu a ${F.dy.format(parseYmd(birth))}` : "data de nascimento?", birth, v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? run(sb.from("settings").upsert({ key: "rodrigo_birth", value: v })) : toast("Usa o formato aaaa-mm-dd")));
+  kidList("#kid-list", "rodrigo");
+  // Nós
+  const us = S.tasks.filter(t => t.cat === "Nós" && !t.done);
+  $("#us").replaceChildren(...(us.length ? us.map(taskRow) : [h("p", { class: "empty" }, "Sem planos a dois. Criem uma tarefa na categoria Nós.")]),
+    h("p", { class: "small muted" }, "Quando marcarem como feito, volta a aparecer daqui a um mês e passa a ser o outro a organizar."));
+}
+function kidList(sel, kid) {
+  const items = S.kids.filter(x => x.kid === kid).sort((a, b) => (a.done - b.done) || (a.date || "9").localeCompare(b.date || "9"));
+  const kindLabel = { vacina: "Vacina", consulta: "Consulta", marco: "Marco", nota: "Nota" };
+  $(sel).replaceChildren(...(items.length ? items.map(x => h("div", { class: "row" + (x.done ? " paid" : "") },
+    tick(x.done, () => run(sb.from("kid_items").update({ done: !x.done }).eq("id", x.id)), "Feito: " + x.title),
+    h("span", { class: "t" }, ed(x.title, x.title, v => run(sb.from("kid_items").update({ title: v }).eq("id", x.id))), h("span", { class: "sub" }, kindLabel[x.kind] || x.kind, x.note ? " · " + x.note : "")),
+    ed(x.date ? F.short.format(parseYmd(x.date)) : "data", x.date, v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") || !v ? run(sb.from("kid_items").update({ date: v || null }).eq("id", x.id)) : toast("Usa aaaa-mm-dd"), { cls: "mono small" }),
+    delBtn(() => run(sb.from("kid_items").delete().eq("id", x.id))))) : [h("p", { class: "empty" }, "—")]));
+}
+async function saveMove(id, amount) {
+  if (!amount || Number.isNaN(amount)) return toast("Indica o valor");
+  const s = S.savings.find(x => x.id === id); if (!s) return;
+  if (await run(sb.from("savings_moves").insert({ saving_id: id, amount, who: S.who })) && await run(sb.from("savings").update({ saved: Math.max(0, +s.saved + amount) }).eq("id", id), `${eur0.format(amount)} no ${s.name.toLowerCase()}`)) await load("smoves");
+}
+
+/* ================= recurring tasks ================= */
+function nextDue(due, recur) {
+  const base = !due || due < ymd(TODAY()) ? TODAY() : parseYmd(due);
+  if (recur === "mensal") { const d = new Date(base); d.setMonth(d.getMonth() + 1); return ymd(d); }
+  return ymd(addDays(base, recur === "quinzenal" ? 14 : 7));
+}
+const otherOf = w => w === "alexandre" ? "rita" : w === "rita" ? "alexandre" : w;
+async function completeTask(x) {
+  if (x.recur && !x.done) {
+    const due = nextDue(x.due, x.recur), who = x.rotate ? otherOf(x.who) : x.who;
+    if (await run(sb.from("tasks").update({ due, who, done_at: new Date().toISOString() }).eq("id", x.id))) toast(`Feito. Próxima: ${F.short.format(parseYmd(due))}${x.rotate ? " · " + WHO[who] : ""}`);
+    return;
+  }
+  await run(sb.from("tasks").update({ done: !x.done, done_at: x.done ? null : new Date().toISOString() }).eq("id", x.id));
+}
+function taskRow(x) {
+  const t = ymd(TODAY());
+  return h("div", { class: "row" + (x.done ? " paid" : "") },
+    tick(x.done, () => completeTask(x), "Concluir " + x.title),
+    h("span", { class: "t" }, ed(x.title, x.title, v => run(sb.from("tasks").update({ title: v }).eq("id", x.id))),
+      h("span", { class: "sub" }, h("span", { class: "chip " + x.who }, WHO[x.who] || x.who), " ", x.cat || "", x.recur ? h("span", { class: "chip" }, "↻ " + x.recur + (x.rotate ? " · alterna" : "")) : null)),
+    x.due ? h("span", { class: "chip " + (!x.done && x.due < t ? "late" : "") }, F.short.format(parseYmd(x.due))) : h("span"),
+    delBtn(() => run(sb.from("tasks").delete().eq("id", x.id))));
 }
 
 /* ================= forms ================= */
@@ -639,9 +985,19 @@ function setupForms() {
     if (await run(sb.from("calendar_sources").insert({ who: $("#src-who").value, label: $("#src-label").value.trim(), ics_url: url }), "Calendário ligado")) { e.target.reset(); await load("sources"); syncNow(); } };
   $("#sh-form").onsubmit = async e => { e.preventDefault(); const n = $("#sh-name").value, q = $("#sh-qty").value; $("#sh-name").value = ""; $("#sh-qty").value = ""; $("#sh-name").focus(); await addShop(n, q, $("#sh-sec").value); };
   $("#sh-clear").onclick = clearBought;
-  $("#tk-form").onsubmit = async e => { e.preventDefault(); if (await run(sb.from("tasks").insert({ title: $("#tk-title").value.trim(), who: $("#tk-who").value, cat: $("#tk-cat").value, due: $("#tk-due").value || null }), "Tarefa criada")) { $("#tk-title").value = ""; $("#tk-due").value = ""; } };
+  $("#tk-form").onsubmit = async e => { e.preventDefault(); if (await run(sb.from("tasks").insert({ title: $("#tk-title").value.trim(), who: $("#tk-who").value, cat: $("#tk-cat").value, due: $("#tk-due").value || ($("#tk-recur").value ? ymd(TODAY()) : null), recur: $("#tk-recur").value || null, rotate: $("#tk-rotate").checked }), "Tarefa criada")) { $("#tk-title").value = ""; $("#tk-due").value = ""; $("#tk-recur").value = ""; $("#tk-rotate").checked = false; } };
   $("#tk-filter").onclick = e => { const b = e.target.closest("button"); if (!b) return; S.tkFilter = b.dataset.f; $$("#tk-filter button").forEach(x => x.classList.toggle("on", x === b)); render(); };
   $("#tk-done").onchange = render;
+  $("#wk-prev").onclick = () => { S.mealWeek = addDays(S.mealWeek, -7); renderMeals(); };
+  $("#wk-next").onclick = () => { S.mealWeek = addDays(S.mealWeek, 7); renderMeals(); };
+  $("#ml-suggest").onclick = suggestWeek;
+  $("#ml-tonight").onclick = tonight;
+  $("#ml-shop").onclick = mealsToShopping;
+  $("#rc-q").oninput = () => renderMeals();
+  $("#rc-mode").onclick = e => { const b = e.target.closest("button"); if (b) setRcMode(b.dataset.m); };
+  $("#dlg").addEventListener("click", e => { if (e.target.id === "dlg") closeDlg(); });
+  $("#bb-form").onsubmit = async e => { e.preventDefault(); if (await run(sb.from("baby_items").insert({ name: cap($("#bb-name").value.trim()), cost: parseFloat($("#bb-cost").value) || null, sort: 99 }), "Adicionado")) e.target.reset(); };
+  $("#kid-form").onsubmit = async e => { e.preventDefault(); if (await run(sb.from("kid_items").insert({ kid: "rodrigo", kind: $("#kid-kind").value, title: $("#kid-title").value.trim(), date: $("#kid-date").value || null }), "Adicionado")) e.target.reset(); };
   $("#gl-form").onsubmit = async e => { e.preventDefault(); if (await run(sb.from("goals").insert({ title: $("#gl-title").value.trim(), horizon: $("#gl-h").value, who: $("#gl-who").value }), "Objetivo criado")) $("#gl-title").value = ""; };
 }
 

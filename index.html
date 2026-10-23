@@ -54,8 +54,10 @@
       <a href="#hoje" data-v="hoje"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M10 19.5v-5h4v5"/></svg><span>Hoje</span></a>
       <a href="#agenda" data-v="agenda"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="4"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Agenda</span></a>
       <a href="#financas" data-v="financas"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="4"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.3"/></svg><span>Finanças</span></a>
+      <a href="#refeicoes" data-v="refeicoes"><svg viewBox="0 0 24 24"><path d="M4 12h16a8 8 0 0 1-16 0z"/><path d="M8 4c0 2 1.5 2 1.5 4M12 3c0 2 1.5 2 1.5 4M16 4c0 2 1.5 2 1.5 4"/></svg><span>Refeições</span></a>
       <a href="#compras" data-v="compras"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1.3 10.2a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg><span>Compras</span> <sup id="nav-shop"></sup></a>
       <a href="#tarefas" data-v="tarefas"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="m8.5 12 2.4 2.4 4.6-4.8"/></svg><span>Tarefas</span></a>
+      <a href="#familia" data-v="familia"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg><span>Família</span></a>
       <a href="#objetivos" data-v="objetivos"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".8"/></svg><span>Objetivos</span></a>
     </nav>
     <div class="me mono">
@@ -75,6 +77,7 @@
       </div>
 
       <div class="kpis" id="kpis"></div>
+      <div class="tonight" id="tonight"></div>
 
       <div class="quick">
         <label class="mono small" for="quick-in">Registo rápido</label>
@@ -223,10 +226,72 @@
         <select id="tk-who"><option value="ambos">Ambos</option><option value="alexandre">Alexandre</option><option value="rita">Rita</option></select>
         <select id="tk-cat"><option>Casa</option><option>Rodrigo</option><option>Bebé</option><option>Admin</option><option>Finanças</option><option>Outro</option></select>
         <input id="tk-due" type="date">
+        <select id="tk-recur" aria-label="Repete"><option value="">Não repete</option><option value="semanal">Todas as semanas</option><option value="quinzenal">De 15 em 15 dias</option><option value="mensal">Todos os meses</option></select>
+        <label class="check small"><input type="checkbox" id="tk-rotate"> Alternar</label>
         <button class="pill accent" type="submit"><span data-t="Adicionar">Adicionar</span></button>
       </form>
       <div id="tk-list"></div>
       <label class="mono small muted check"><input type="checkbox" id="tk-done"> Mostrar concluídas</label>
+    </section>
+
+    <!-- REFEIÇÕES -->
+    <section class="view" id="v-refeicoes" hidden>
+      <div class="view-head">
+        <div class="month-nav">
+          <button class="icon-btn" id="wk-prev" aria-label="Semana anterior">←</button>
+          <div><h2 class="display-s" id="wk-title">Refeições</h2><p class="mono small muted" id="wk-range"></p></div>
+          <button class="icon-btn" id="wk-next" aria-label="Semana seguinte">→</button>
+        </div>
+        <div class="actions">
+          <button class="pill ghost sm" id="ml-tonight" type="button"><span data-t="O que jantamos hoje?">O que jantamos hoje?</span></button>
+          <button class="pill ghost sm" id="ml-suggest" type="button"><span data-t="Sugerir a semana">Sugerir a semana</span></button>
+          <button class="pill sm" id="ml-shop" type="button"><span data-t="Ingredientes para as compras">Ingredientes para as compras</span></button>
+        </div>
+      </div>
+      <div class="week" id="week"></div>
+      <div class="grid-2 rc-grid">
+        <div class="block">
+          <div class="block-head"><h3>As nossas receitas</h3><span class="mono small muted" id="rc-count"></span></div>
+          <p class="small muted">Ordenadas pelo que mais gostam. Cada "Adorei" ou "Não repetir" muda as sugestões, e pratos feitos há menos de uma semana ficam de fora.</p>
+          <div class="rc-tools"><input id="rc-q" type="search" placeholder="Procurar receita ou ingrediente"><div class="chips" id="rc-tags"></div></div>
+          <div id="rc-list" class="rc-list"></div>
+        </div>
+        <div class="block" id="rc-add">
+          <div class="block-head"><h3>Adicionar receita</h3></div>
+          <div class="seg" id="rc-mode"><button type="button" class="on" data-m="link">Link</button><button type="button" data-m="texto">Colar texto</button><button type="button" data-m="manual">Escrever</button></div>
+          <div id="rc-src"></div>
+          <div id="rc-editor"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAMÍLIA -->
+    <section class="view" id="v-familia" hidden>
+      <div class="view-head"><h2 class="display-s">Família</h2><p class="mono small muted" id="fm-meta"></p></div>
+      <div class="block" id="baby-plan"></div>
+      <div class="grid-2">
+        <div class="block">
+          <div class="block-head"><h3>Lista do bebé</h3><span class="mono small muted" id="bb-sum"></span></div>
+          <div id="bb-list"></div>
+          <form id="bb-form" class="row-form" autocomplete="off"><input id="bb-name" placeholder="Artigo" required><input id="bb-cost" type="number" step="0.01" min="0" placeholder="€"><button class="pill sm" type="submit"><span data-t="Adicionar">Adicionar</span></button></form>
+        </div>
+        <div class="block">
+          <div class="block-head"><h3>Licença e papéis</h3></div>
+          <div id="bb-leave"></div>
+          <div id="bb-admin"></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="block">
+          <div class="block-head"><h3>Rodrigo</h3><span class="mono small muted" id="kid-age"></span></div>
+          <div id="kid-list"></div>
+          <form id="kid-form" class="row-form" autocomplete="off"><select id="kid-kind"><option value="vacina">Vacina</option><option value="consulta">Consulta</option><option value="marco">Marco</option><option value="nota">Nota</option></select><input id="kid-title" placeholder="O quê" required><input id="kid-date" type="date"><button class="pill sm" type="submit"><span data-t="Adicionar">Adicionar</span></button></form>
+        </div>
+        <div class="block">
+          <div class="block-head"><h3>Nós</h3></div>
+          <div id="us"></div>
+        </div>
+      </div>
     </section>
 
     <!-- OBJETIVOS -->
@@ -243,8 +308,9 @@
   </main>
 
   <nav class="tabbar mono" id="tabbar">
-    <a href="#hoje" data-v="hoje"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M10 19.5v-5h4v5"/></svg><span>Hoje</span></a><a href="#agenda" data-v="agenda"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="4"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Agenda</span></a><a href="#financas" data-v="financas"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="4"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.3"/></svg><span>Contas</span></a><a href="#compras" data-v="compras"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1.3 10.2a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg><span>Compras</span></a><a href="#tarefas" data-v="tarefas"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="m8.5 12 2.4 2.4 4.6-4.8"/></svg><span>Tarefas</span></a>
-  </nav>
+    <a href="#hoje" data-v="hoje"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M10 19.5v-5h4v5"/></svg><span>Hoje</span></a><a href="#agenda" data-v="agenda"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="4"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Agenda</span></a><a href="#financas" data-v="financas"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="4"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.3"/></svg><span>Contas</span></a><a href="#refeicoes" data-v="refeicoes"><svg viewBox="0 0 24 24"><path d="M4 12h16a8 8 0 0 1-16 0z"/><path d="M8 4c0 2 1.5 2 1.5 4M12 3c0 2 1.5 2 1.5 4M16 4c0 2 1.5 2 1.5 4"/></svg><span>Refeições</span></a><a href="#compras" data-v="compras"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1.3 10.2a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg><span>Compras</span></a><a href="#tarefas" data-v="tarefas"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="m8.5 12 2.4 2.4 4.6-4.8"/></svg><span>Tarefas</span></a>
+  <a href="#familia" data-v="familia"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg><span>Família</span></a><a href="#objetivos" data-v="objetivos"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".8"/></svg><span>Objetivos</span></a></nav>
+  <dialog class="dlg" id="dlg"><div class="dlg-in" id="dlg-body"></div></dialog>
   <div class="toast mono small" id="toast" role="status" aria-live="polite"></div>
 </div>
 

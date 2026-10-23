@@ -73,6 +73,8 @@ Deno.serve(async () => {
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   const report: Record<string, unknown>[] = [];
   for (const src of sources ?? []) {
+    // Sources filled by Claude through the Google Calendar connector have no feed to fetch.
+    if (!src.ics_url || src.ics_url.startsWith("connector:")) continue;
     try {
       const url = src.ics_url.replace(/^webcal:/i, "https:");
       const res = await fetch(url, { headers: { "user-agent": "casa-pereira-silva-sync" } });

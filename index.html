@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0D0D0C">
+<meta name="robots" content="noindex,nofollow">
+<title>Casa Pereira Silva</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<section id="login" class="login" hidden>
+  <canvas id="field" aria-hidden="true"></canvas>
+  <div class="login-top mono">
+    <span>CPS — Casa Pereira Silva</span>
+    <span><span id="clock"></span> · Braga</span>
+  </div>
+  <div class="login-bottom">
+    <h1 class="giant" aria-label="Casa Pereira Silva">
+      <span class="ln"><span>Casa</span></span>
+      <span class="ln"><span>Pereira</span></span>
+      <span class="ln grey"><span>Silva.</span></span>
+    </h1>
+    <form id="login-form" class="login-form">
+      <label class="mono small" for="login-email">Entrar com o teu email</label>
+      <div class="login-row">
+        <input id="login-email" type="email" required autocomplete="email" placeholder="nome@gmail.com">
+        <button class="pill accent" type="submit"><span data-t="Enviar link">Enviar link</span></button>
+      </div>
+      <p class="mono small muted" id="login-msg">Recebes um link no email. Sem passwords.</p>
+    </form>
+  </div>
+</section>
+
+<!-- ============ APP ============ -->
+<div id="app" hidden>
+  <header class="top" id="top">
+    <a class="brand" href="#hoje" aria-label="Início">CPS<span class="dot-accent">.</span></a>
+    <nav class="nav mono" id="nav">
+      <a href="#hoje" data-v="hoje">Hoje</a>
+      <a href="#agenda" data-v="agenda">Agenda</a>
+      <a href="#financas" data-v="financas">Finanças</a>
+      <a href="#compras" data-v="compras">Compras <sup id="nav-shop"></sup></a>
+      <a href="#tarefas" data-v="tarefas">Tarefas</a>
+      <a href="#objetivos" data-v="objetivos">Objetivos</a>
+    </nav>
+    <div class="me mono">
+      <span id="me-name"></span>
+      <button class="link" id="logout" type="button">Sair</button>
+    </div>
+  </header>
+
+  <main id="views">
+    <!-- HOJE -->
+    <section class="view" id="v-hoje">
+      <div class="hero-today">
+        <p class="mono small muted" id="today-meta"></p>
+        <h2 class="display" id="today-title"></h2>
+        <p class="statement" id="today-statement"></p>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="quick">
+        <label class="mono small" for="quick-in">Registo rápido</label>
+        <form id="quick-form" class="quick-row" autocomplete="off">
+          <input id="quick-in" type="text" placeholder="20 gasolina, 161 continente, recebi 300 extra">
+          <button class="pill" type="submit"><span data-t="Ver">Ver</span></button>
+        </form>
+        <div id="quick-preview"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="block">
+          <div class="block-head"><h3>Próximos 7 dias</h3><a class="mono small link" href="#agenda">Agenda →</a></div>
+          <div id="today-events"></div>
+        </div>
+        <div class="block">
+          <div class="block-head"><h3>Contas a vencer</h3><a class="mono small link" href="#financas">Finanças →</a></div>
+          <div id="today-bills"></div>
+        </div>
+      </div>
+
+      <div class="preg-block dark" id="preg"></div>
+    </section>
+
+    <!-- AGENDA -->
+    <section class="view" id="v-agenda" hidden>
+      <div class="view-head">
+        <div class="month-nav">
+          <button class="icon-btn" id="cal-prev" aria-label="Mês anterior">←</button>
+          <h2 class="display-s" id="cal-title"></h2>
+          <button class="icon-btn" id="cal-next" aria-label="Mês seguinte">→</button>
+        </div>
+        <div class="legend mono small">
+          <span><i class="sw alexandre"></i>Alexandre</span><span><i class="sw rita"></i>Rita</span><span><i class="sw familia"></i>Família</span><span><i class="sw feriado"></i>Feriados</span>
+        </div>
+      </div>
+      <div class="cal" id="cal"></div>
+      <div class="grid-2">
+        <div class="block">
+          <div class="block-head"><h3 id="day-title">Hoje</h3></div>
+          <div id="day-events"></div>
+        </div>
+        <div class="block">
+          <div class="block-head"><h3>Calendários ligados</h3><button class="pill sm" id="sync-now" type="button"><span data-t="Sincronizar">Sincronizar</span></button></div>
+          <div id="sources"></div>
+          <details class="howto">
+            <summary class="mono small">Ligar um calendário</summary>
+            <ol class="small">
+              <li>No Google Calendar (computador): Definições → escolhe o calendário → "Integrar calendário".</li>
+              <li>Copia o <b>Endereço secreto no formato iCal</b>.</li>
+              <li>Cola aqui em baixo. Atualiza sozinho de 15 em 15 minutos.</li>
+            </ol>
+            <form id="src-form" class="row-form">
+              <select id="src-who"><option value="alexandre">Alexandre</option><option value="rita">Rita</option><option value="familia">Família</option></select>
+              <input id="src-label" type="text" placeholder="Nome (ex.: Trabalho)" required>
+              <input id="src-url" type="url" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" required>
+              <button class="pill accent sm" type="submit"><span data-t="Ligar">Ligar</span></button>
+            </form>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- FINANÇAS -->
+    <section class="view" id="v-financas" hidden>
+      <div class="view-head">
+        <div class="month-nav">
+          <button class="icon-btn" id="cy-prev" aria-label="Ciclo anterior">←</button>
+          <div><h2 class="display-s" id="cy-title"></h2><p class="mono small muted" id="cy-range"></p></div>
+          <button class="icon-btn" id="cy-next" aria-label="Ciclo seguinte">→</button>
+        </div>
+      </div>
+      <div class="kpis" id="fin-kpis"></div>
+
+      <div class="block dark-block">
+        <div class="block-head"><h3>Para onde vai o dinheiro</h3><span class="mono small muted" id="dash-sub"></span></div>
+        <div id="dash"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="block">
+          <div class="block-head"><h3>Todos os meses</h3><button class="pill sm" id="fx-add" type="button"><span data-t="+ Adicionar">+ Adicionar</span></button></div>
+          <form id="fx-form" class="row-form" hidden>
+            <select id="fx-kind"><option value="expense">Despesa</option><option value="income">Rendimento</option></select>
+            <input id="fx-name" type="text" placeholder="Nome" required>
+            <input id="fx-amt" type="number" step="0.01" min="0" placeholder="€" required inputmode="decimal">
+            <input id="fx-day" type="number" min="1" max="31" placeholder="Dia">
+            <select id="fx-cat"></select>
+            <input id="fx-end" type="text" placeholder="Última prestação mm/aaaa">
+            <button class="pill accent sm" type="submit"><span data-t="Guardar">Guardar</span></button>
+          </form>
+          <div id="fixed"></div>
+        </div>
+        <div class="block">
+          <div class="block-head"><h3>Dia a dia</h3></div>
+          <form id="tx-form" class="row-form">
+            <select id="tx-type"><option value="despesa">Despesa</option><option value="receita">Receita</option></select>
+            <input id="tx-amt" type="number" step="0.01" min="0" placeholder="€" required inputmode="decimal">
+            <input id="tx-desc" type="text" placeholder="Descrição">
+            <select id="tx-cat"></select>
+            <input id="tx-date" type="date" required>
+            <button class="pill accent sm" type="submit"><span data-t="Registar">Registar</span></button>
+          </form>
+          <div id="txs"></div>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="block-head"><h3>Poupanças</h3></div>
+        <div id="savings" class="savings"></div>
+        <form id="sv-form" class="row-form">
+          <input id="sv-name" type="text" placeholder="Nova meta" required>
+          <input id="sv-target" type="number" min="0" placeholder="Objetivo €" required>
+          <button class="pill sm" type="submit"><span data-t="Criar">Criar</span></button>
+        </form>
+      </div>
+    </section>
+
+    <!-- COMPRAS -->
+    <section class="view" id="v-compras" hidden>
+      <div class="view-head"><h2 class="display-s">Compras</h2><span class="mono small muted" id="shop-count"></span></div>
+      <form id="sh-form" class="big-input" autocomplete="off">
+        <input id="sh-name" type="text" placeholder="O que falta em casa?" enterkeyhint="done">
+        <input id="sh-qty" type="text" placeholder="Qtd." class="qty">
+        <select id="sh-sec"></select>
+        <button class="pill accent" type="submit"><span data-t="Adicionar">Adicionar</span></button>
+      </form>
+      <div id="sh-freq" class="freq"></div>
+      <div class="grid-2">
+        <div id="sh-list"></div>
+        <div class="block">
+          <div class="block-head"><h3>No carrinho</h3><button class="pill sm" id="sh-clear" type="button"><span data-t="Limpar comprados">Limpar comprados</span></button></div>
+          <div id="sh-done"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAREFAS -->
+    <section class="view" id="v-tarefas" hidden>
+      <div class="view-head"><h2 class="display-s">Tarefas</h2>
+        <div class="seg mono small" id="tk-filter"><button data-f="todas" class="on">Todas</button><button data-f="alexandre">Alexandre</button><button data-f="rita">Rita</button><button data-f="ambos">Ambos</button></div>
+      </div>
+      <form id="tk-form" class="big-input" autocomplete="off">
+        <input id="tk-title" type="text" placeholder="Nova tarefa" required>
+        <select id="tk-who"><option value="ambos">Ambos</option><option value="alexandre">Alexandre</option><option value="rita">Rita</option></select>
+        <select id="tk-cat"><option>Casa</option><option>Rodrigo</option><option>Bebé</option><option>Admin</option><option>Finanças</option><option>Outro</option></select>
+        <input id="tk-due" type="date">
+        <button class="pill accent" type="submit"><span data-t="Adicionar">Adicionar</span></button>
+      </form>
+      <div id="tk-list"></div>
+      <label class="mono small muted check"><input type="checkbox" id="tk-done"> Mostrar concluídas</label>
+    </section>
+
+    <!-- OBJETIVOS -->
+    <section class="view" id="v-objetivos" hidden>
+      <div class="view-head"><h2 class="display-s">Objetivos</h2></div>
+      <form id="gl-form" class="big-input" autocomplete="off">
+        <input id="gl-title" type="text" placeholder="Novo objetivo" required>
+        <select id="gl-h"><option value="curto">Este ano</option><option value="medio">1 a 3 anos</option><option value="longo">Longo prazo</option></select>
+        <select id="gl-who"><option value="ambos">Ambos</option><option value="alexandre">Alexandre</option><option value="rita">Rita</option></select>
+        <button class="pill accent" type="submit"><span data-t="Adicionar">Adicionar</span></button>
+      </form>
+      <div class="goals" id="goals"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar mono" id="tabbar">
+    <a href="#hoje" data-v="hoje">Hoje</a><a href="#agenda" data-v="agenda">Agenda</a><a href="#financas" data-v="financas">€</a><a href="#compras" data-v="compras">Compras</a><a href="#tarefas" data-v="tarefas">Tarefas</a>
+  </nav>
+  <div class="toast mono small" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<div id="denied" class="denied" hidden>
+  <h2 class="display-s">Esta casa é privada.</h2>
+  <p class="muted">O email <b id="denied-email"></b> não tem acesso.</p>
+  <button class="pill" id="denied-out" type="button"><span data-t="Sair">Sair</span></button>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
